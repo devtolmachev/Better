@@ -21,4 +21,3 @@ class Better(Database, UserRepository, MatchRepository, Bet):
     def get_user(user_id) -> User:
         user = UserRepository(user_id=user_id)
         return user.get(user_id=user_id)
-

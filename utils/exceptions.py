@@ -1,6 +1,6 @@
-from loguru import logger
-
 from typing import Any
+
+from loguru import logger
 
 
 class BaseBetterExceptions(Exception):
@@ -25,13 +25,7 @@ class WrongJsonbQueryError(BaseBetterExceptions):
         super().__init__(logger.error(self.message))
 
 
-class BaseFonbetException(Exception):
-    """
-    Базовые исключения для бота (этого проекта)
-    """
-
-
-class MatchFinishError(Exception):
+class MatchFinishError(BaseBetterExceptions):
     """"Это исключение вызывается, когда заканчивается матч"""
 
     message = 'Матч кончился. Ищу следующий'
@@ -42,7 +36,7 @@ class MatchFinishError(Exception):
         super().__init__(logger.critical(self.message))
 
 
-class UninterestingMatch(Exception):
+class UninterestingMatch(BaseBetterExceptions):
     """Это исключение вызывается в том случае, когда матч по определенным причинам
     становится не интересным"""
 
@@ -54,7 +48,7 @@ class UninterestingMatch(Exception):
         super().__init__(logger.critical(self.message))
 
 
-class RetryError(Exception):
+class RetryError(BaseBetterExceptions):
     """Исключение вызывается в том случае, если нужно повторить попытку"""
     message = 'Попытка подключиться заново'
 
@@ -64,7 +58,7 @@ class RetryError(Exception):
         super().__init__(logger.critical(self.message))
 
 
-class MatchesNotFoundError(Exception):
+class MatchesNotFoundError(BaseBetterExceptions):
     """Исключение возникает когда матч(и) не найден(ы)"""
 
     message = 'Матчи не найдены'
@@ -75,7 +69,7 @@ class MatchesNotFoundError(Exception):
         super().__init__(logger.critical(self.message))
 
 
-class WrongLeaguesFilter(Exception):
+class WrongLeaguesFilter(BaseBetterExceptions):
     """Возникает в случае, если были переданы неправильно фильтры"""
 
     message = 'Неправильно переданы фильтры с лигами'
@@ -86,7 +80,7 @@ class WrongLeaguesFilter(Exception):
         super().__init__(logger.error(self.message))
 
 
-class WrongJsonbQuery(Exception):
+class WrongJsonbQuery(BaseBetterExceptions):
     """
     Возникает в том случае, если был неправильно сформирован запрос в БД,
     при типе данных jsonb
@@ -100,7 +94,7 @@ class WrongJsonbQuery(Exception):
         super().__init__(logger.critical(self.message))
 
 
-class NotFoundError(Exception):
+class NotFoundError(BaseBetterExceptions):
     """
     Возникает в том случае, если в базе данных после запроса ничего не найдено (возвращается None)
     """
@@ -110,18 +104,4 @@ class NotFoundError(Exception):
     def __init__(self, message: Any = None):
         if message:
             self.message = message
-        super().__init__(logger.error(self.message))
-
-
-class UninterestingMatch:
-    """
-    Возникает в том случае, если матч по правилам стратегии не интересный, и его надо убрать
-    """
-
-    message = 'Матч не интересен, начинаю поиск другого'
-
-    def __init__(self, message: Any = None):
-        if message:
-            self.message = message
-        super().__init__(logger.error(self.message))
-
+        super().__init__(self.message)

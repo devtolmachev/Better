@@ -15,17 +15,58 @@ class CRUDService:
         pass
 
     @staticmethod
-    def truncate(table: str):
-        return "TRUNCATE TABLE %s" % table
+    def truncate(**kwargs):
+        """
+        Формирует запрос TRUNCATE
+        :param kwargs: Должен быть один именованный параметр, название
+            которого = что нужно очистить (table), а значение =
+            названию этого объекта (param: table=users)
+        :return: Строковый запрос в базу данных
+        :rtype: str
+        """
+        if len(kwargs) > 1:
+            raise WrongQueryError('Должен быть только один параметр')
+
+        obj = ''.join(kwargs.keys())
+        value = ''.join(kwargs.values())
+
+        query = "TRUNCATE %s %s" % (obj, value)
+        return query
 
     @staticmethod
-    def create(table: str, *, columns: list, values: list):
-        if len(columns) != len(values):
+    def create(table: str, *, columns: list = '', values: list):
+        """
+        Формирует запрос INSERT
+        :param table: Название таблицы
+        :type table: str
+        :param columns: Название столбцов таблицы, можно не указывать -
+            тогда будет вставка по всей таблице
+        :type columns: list
+        :param values: Значения которые нужно вставить в таблицу,
+            по стандарту значения должы
+        :type values:
+        :return:
+        :rtype:
+        """
+        if type(values) == list and type(columns) == list and \
+                len(columns) != len(values):
             raise WrongQueryError
 
-        return ("""INSERT INTO %s(%s) VALUES('%s');""" % (table,
-                                                          ", ".join(columns),
-                                                          "', '".join(list(map(lambda x: str(x), values)))))
+        if type(columns) == list:
+            columns_ = f"({', '.join(columns)})"
+        else:
+            columns_ = ''
+
+        if type(values) == list:
+            values_ = f"""VALUES ('{"', '".join(
+                list(map(lambda x: str(x), values)))}')"""
+        else:
+            values_ = values
+
+        query = """INSERT INTO %s%s VALUES('%s');""" % (table,
+                                                        columns_,
+                                                        values_)
+        return query
 
     @staticmethod
     def read(table: str, *, columns: list | str, **kwargs):
@@ -125,14 +166,14 @@ class JsonbCRUDService(CRUDService):
         if array:
             value = f'[{value}]'
         return ("""UPDATE %s SET %s = jsonb_set(%s, '{%s}', %s->'%s' || '%s', %s) %s;""" % (table,
-                                                                                              column,
-                                                                                              column,
-                                                                                              ", ".join(path),
-                                                                                              column,
-                                                                                              "'->'".join(path),
-                                                                                              value,
-                                                                                              add_key,
-                                                                                              ''.join(where)))
+                                                                                            column,
+                                                                                            column,
+                                                                                            ", ".join(path),
+                                                                                            column,
+                                                                                            "'->'".join(path),
+                                                                                            value,
+                                                                                            add_key,
+                                                                                            ''.join(where)))
 
     @staticmethod
     def read(table: str, *, columns: str, path: list, **kwargs):

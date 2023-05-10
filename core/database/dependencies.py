@@ -6,7 +6,6 @@ prognoses = {
     "part4": "ЧЕТ",
 }
 
-
 scores = {
     "t1_p1": "10",
     "t2_p1": "17",

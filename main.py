@@ -1,9 +1,9 @@
-from aiogram import executor
-
 import logging
 
+from aiogram import executor
+
 from app.telegram_bot.handlers.main import register_handlers
-from etc import bot, dp
+from etc import dp
 
 
 def on_startup():

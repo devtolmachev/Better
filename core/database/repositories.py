@@ -1,5 +1,3 @@
-from typing import List
-
 from core.types.dynamic import User, Bet, Match
 from core.types.static import BaseType
 
@@ -10,13 +8,13 @@ class BaseRepository(BaseType):
     """
 
     def get(self):
-        raise TypeError('Не реализован метод get в классе наследнике')
+        raise NotImplementedError('Не реализован метод get в классе наследнике')
 
     def save(self):
-        raise TypeError('Не реализован метод save в классе наследнике')
+        raise NotImplementedError('Не реализован метод save в классе наследнике')
 
     def delete(self):
-        raise TypeError('Не реализован метод delete в классе наследнике')
+        raise NotImplementedError('Не реализован метод delete в классе наследнике')
 
 
 class UserRepository(BaseRepository):
@@ -29,7 +27,7 @@ class UserRepository(BaseRepository):
         return User(user_id)
 
     def get_all(self):
-        query = self._model.read('users', column='user_id')
+        query = self._model.read('users', columns='user_id')
         return list(map(lambda x: str(x[0]), super()._database.get_all(query)))
 
     @staticmethod
@@ -43,12 +41,6 @@ class UserRepository(BaseRepository):
     @staticmethod
     def add_url(user_id: str | int, url: list):
         User(user_id=user_id).urls.append(url)
-
-
-class BetRepozitory(BaseRepository):
-
-    def get(self, match_id: str | int) -> Bet:
-        return Bet(match_id=match_id)
 
 
 class MatchRepository(BaseRepository):
@@ -70,6 +62,5 @@ class MatchRepository(BaseRepository):
         Match(match_id=match_id).edit(column='status', value=new_status)
 
     def get_matches(self) -> list[str]:
-        query = super()._model.read('matches', column='id')
+        query = super()._model.read('matches', columns='id')
         return list(map(lambda x: str(x[0]), super()._database.get_all(query=query)))
-

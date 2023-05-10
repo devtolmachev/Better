@@ -1,6 +1,6 @@
 import json
-import time
-from typing import Any, Tuple, List
+from datetime import datetime
+from typing import Any
 
 import psycopg2
 
@@ -45,15 +45,15 @@ class Database:
                 "basketball": {
                     "random": {
                         "": {
-                            "max_counter": "10"
+                            "max_counter": "0"
                         },
                         "NBA 2K23": {
-                            "max_counter": "10"
+                            "max_counter": "0"
                         }
                     },
                     "scenarios": {
                         "NBA 2K23": {
-                            "max_counter": "1"
+                            "max_counter": "0"
                         }
                     }
                 }
@@ -113,6 +113,20 @@ class Database:
                         "first_match_session JSONB NOT NULL DEFAULT '{}',"
                         "last_match_session JSONB NOT NULL DEFAULT '{}',"
                         "startup_session NUMERIC DEFAULT EXTRACT(epoch FROM now()))")
+
+            cur.execute("CREATE TABLE IF NOT EXISTS cache_matches("
+                        "id VARCHAR(150) NOT NULL PRIMARY KEY,"
+                        "username VARCHAR(100), "
+                        "timer VARCHAR(20), "
+                        "team1 VARCHAR(300), "
+                        "team2 VARCHAR(300),"
+                        "part VARCHAR(10), "
+                        "status VARCHAR(20) DEFAULT 'playing', "
+                        "scores JSONB NOT NULL DEFAULT '{}',"
+                        "prognoses JSONB NOT NULL DEFAULT '{}',"
+                        "filter VARCHAR(100),"
+                        "json_url VARCHAR(500), "
+                        "moved NUMERIC DEFAULT EXTRACT(epoch FROM now()))")
 
     def close_connection(self):
         self.base.close()

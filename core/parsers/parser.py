@@ -95,7 +95,7 @@ class ParserBase:
     async def get_data_match(self,
                              url: str,
                              filtering: str,
-                             max_period: int,
+                             mdp: int,
                              retry: int = 5,
                              timeout=2):
         """
@@ -107,7 +107,7 @@ class ParserBase:
         :param timeout: Устанавливается таймаут, чтобы долго не ждать ответа от
             сервера, а пропускать сборку данных этого url
 
-        :param max_period: Укажите максимальный возможный период у матча, для
+        :param mdp: Укажите максимальный возможный период у матча, для
             корректной работы метода
 
         :param filtering: С каким фильтром матч был найден?
@@ -161,7 +161,7 @@ class ParserBase:
             data_match["json_url"] = url
             data_match["prognoses"] = {}
 
-            for i in range(1, max_period + 1):
+            for i in range(1, mdp + 1):
                 data_match["scores"][f"t1_p{i}"] = 'x'
                 data_match["scores"][f"t2_p{i}"] = 'x'
 
@@ -194,13 +194,18 @@ class ParserBase:
             data_match["scores"]["t2_p0"] = \
                 response["liveEventInfos"][0]["scores"][0][0]["c2"]
 
+            if parts > mdp:
+                data_match["part"] = mdp
+
             try:
                 for i in [1, 2]:
-                    add_time = response["liveEventInfos"][0]["scores"][1][parts - 1][f"c{i}"]
-                    data_match[f"t{i}_p{max_period}"] = (
-                            int(data_match[f"t{i}_p4"]) + int(add_time))
+                    try:
+                        add_time = response["liveEventInfos"]["extraEvent"]["score"][f"c{i}"]
+                    except (IndexError, KeyError):
+                        add_time = response["liveEventInfos"][0]["scores"][1][parts - 1][f"c{i}"]
 
-            except (IndexError, KeyError):
+                    data_match[f"t{i}_p{mdp}"] = int(data_match[f"t{i}_p{mdp}"]) + int(add_time)
+            except (IndexError, KeyError, TypeError):
                 pass
 
             except Exception:
@@ -213,10 +218,7 @@ class ParserBase:
         except requests.exceptions.ConnectionError:
             raise
 
-        except (requests.exceptions.Timeout,
-                requests.exceptions.ConnectTimeout,
-                TimeoutError):
-
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout, TimeoutError):
             raise
 
         except MatchFinishError:
@@ -231,7 +233,7 @@ class ParserBase:
                 await asyncio.sleep(10)
                 return self.get_data_match(url=url,
                                            filtering=filtering,
-                                           max_period=max_period,
+                                           mdp=mdp,
                                            retry=retry - 1)
             else:
                 raise ConnectionError
@@ -430,18 +432,16 @@ class ParserBase:
                 for liga in filter_leagues["searching"]:
 
                     if sport_name.count(sport) and sport_name.count(liga) \
-                            and [sport_id, liga]    not in sport_id_lst:
+                            and [sport_id, liga] not in sport_id_lst:
 
                         if liga == "":
                             if len(filter_leagues["searching"]) > 1 and \
                                     filter_leagues["searching"][0] == "":
-                                for sports in sport_id_lst:
-                                    if "" not in sports:
-                                        sport_id_lst.append([sport_id, liga])
 
-                                for spec_liga in filter_leagues["searching"][:1]:
+                                for spec_liga in filter_leagues["searching"][1:]:
                                     if spec_liga not in sport_name:
                                         sport_id_lst.append([sport_id, liga])
+
                             else:
                                 sport_id_lst.append([sport_id, liga])
 
@@ -502,7 +502,7 @@ class ParserBase:
                         check_id.append(event_id)
                         temp_lst.append([filtering, event_id])
 
-        if len(temp_lst) < len(filter_leagues["searching"]):
+        if len(temp_lst) < len(filter_leagues["searching"]) * limit:
             raise MatchesNotFoundError
 
         logger.debug(
@@ -519,7 +519,8 @@ class ParserBase:
                        only_sports: bool = False,
                        retry: int = 5,
                        time_param: bool | str = False,
-                       timeout: int = 3):
+                       timeout: int = 3,
+                       test: bool = False):
         """
         Этот метод предназначен для получения ссылок на отслеживание подходящих
         матчей с максимальной скоростью.
@@ -655,7 +656,11 @@ def read_file():
                 num = row.split(' № ')[1].split(', ')[0]
                 lst.append(num)
 
-    num = lst[-1]
+    try:
+        num = lst[-1]
+    except IndexError:
+        num = 0
+
     return num
 
 
@@ -728,7 +733,7 @@ async def test_search_and_scanning():
             start_scan = time.time()
             try:
                 scores = await p.get_data_match(url=url, filtering=filtering,
-                                                max_period=max_period)
+                                                mdp=max_period)
             except:
                 await asyncio.sleep(0.5)
                 continue

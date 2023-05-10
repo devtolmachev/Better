@@ -4,6 +4,7 @@ import random
 from loguru import logger
 
 from core.better import Better
+from core.database.repositories import UserRepository, MatchRepository
 from core.types.static import BaseType
 from utils.exceptions import UninterestingMatch
 
@@ -25,7 +26,7 @@ class BaseStrategy(BaseType):
         :param total: Если нужно проверить общий тотал матча, указывайте True
         """
         with Better() as better:
-            bet: str = better.previous_bet
+            bet: str = better.last_bet
 
             if bet.lower().count("пропускаю"):
                 logger.debug('Вернул "pass"')
@@ -64,6 +65,9 @@ class BaseStrategy(BaseType):
             elif result_score != bet:
                 return 'not_guess'
 
+    def update_counter(self, *args, **kwargs):
+        raise NotImplementedError('Не реализован метод update_counter в стратегии')
+
     @property
     def filters(self):
         return
@@ -80,9 +84,12 @@ class BaseStrategy(BaseType):
     def name(self):
         return 'Base'
 
+    def gen_bets(self, *args, **kwargs):
+        pass
+
 
 class Randomaizer(BaseStrategy):
-    __filters_dict = {"searching": ["NBA 2K23", ""], "blacklist": ["NCAA", "NСАА"]}
+    __filters_dict = {"searching": ["", "NBA 2K23"], "blacklist": ["NCAA", "NСАА"]}
     __max_matches_in_liga = 1
 
     @staticmethod
@@ -155,29 +162,21 @@ class Randomaizer(BaseStrategy):
     def __update_counters(self, user_id: str | int, filtering: str, type_coincidence: str):
         counter_guess = int(
             super()._database.get_one(
-                query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                                  filtering, 'guess'],
+                query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                                   filtering, 'guess'],
                                                 user_id=user_id)
             )
         )
 
         counter_not_guess = int(
             super()._database.get_one(
-                query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                                  filtering, 'not_guess'],
+                query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                                   filtering, 'not_guess'],
                                                 user_id=user_id)
             )
         )
         if counter_guess > 0 and counter_not_guess > 0:
             self.reset_counters(user_id=user_id, filtering=filtering)
-
-        counter = int(
-            super()._database.get_one(
-                query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                                  filtering, type_coincidence],
-                                                user_id=user_id)
-            )
-        ) + 1
 
         if counter_guess > 0 and type_coincidence == 'not_guess':
             super()._database.apply_query(
@@ -196,6 +195,14 @@ class Randomaizer(BaseStrategy):
                     user_id=user_id
                 )
             )
+
+        counter = int(
+            super()._database.get_one(
+                query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                                   filtering, type_coincidence],
+                                                user_id=user_id)
+            )
+        ) + 1
 
         query_update = super()._model_jsonb.update('users', column='counters',
                                                    path=['fonbet', 'basketball', self.name, filtering,
@@ -231,11 +238,11 @@ class Randomaizer(BaseStrategy):
 
     @property
     def max_part(self):
-        return 3
+        return 4
 
     @property
     def max_time(self):
-        return 5.00
+        return False
 
     @property
     def name(self):
@@ -245,22 +252,41 @@ class Randomaizer(BaseStrategy):
     def urls_limit(self):
         return len(self.__filters_dict["searching"]) * self.__max_matches_in_liga
 
+    @staticmethod
+    def template_checking_message(user_id: str | int, match_id: str | int):
+        user = UserRepository().get(user_id=user_id)
+        match = MatchRepository().get(match_id=match_id)
+        part = f"{match.part} четверть"
+
+        if match.part > 3:
+            part = f"Матч"
+
+        message_teams = f"<b>{match.teams}</b>"
+        message_part = f"Играют {match.part} четверть"
+        score_message = f"Счет - {match.scores.get_part_score(match.part)}"
+        timer_message = f"Таймер - {match.timer}"
+        bet_message = f"Ставка на {match.part} четверть - {match.bets.get_bet(match.part + 1)}"
+        if match.part > 3:
+            bet_message = f"Ставка на матч - {match.bets.get_bet(match.part)}"
+
+        text = f"{message_teams}\n{message_part}\n{score_message}\n{timer_message}\n{bet_message}"
+        return text
+
 
 class Scenarios(BaseStrategy):
     __filters_dict = {"searching": ["NBA 2K23"], "blacklist": ["NCAA", "NСАА", "H2H LIGA-1"]}
     __max_matches_in_liga = 1
 
     def update_counter(self, filtering: str, user_id: str | int, type_coincidence: str):
-        self.__update_temp_counters(type_coincidence=type_coincidence,
-                                    user_id=user_id)
+        self.__update_temp_counters(type_coincidence=type_coincidence, user_id=user_id)
 
         tmp_counter_guess = int(super()._database.get_one(
-            query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                              'temp_counters', 'guess'])
+            query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                               'temp_counters', 'guess'])
         ))
         tmp_counter_not_guess = int(super()._database.get_one(
-            query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                              'temp_counters', 'not_guess'])
+            query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                               'temp_counters', 'not_guess'])
         ))
 
         if tmp_counter_guess > 0 and tmp_counter_not_guess > 0:
@@ -276,8 +302,8 @@ class Scenarios(BaseStrategy):
 
     def __update_temp_counters(self, type_coincidence: str, user_id: str | int):
         new_counter = int(super()._database.get_one(
-            super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                        'temp_counters', type_coincidence],
+            super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                         'temp_counters', type_coincidence],
                                       user_id=user_id)
         )) + 1
         query = super()._model_jsonb.update('users', column='counters', path=['fonbet', 'basketball', self.name,
@@ -288,8 +314,8 @@ class Scenarios(BaseStrategy):
 
     def __update_main_counter(self, type_coincidence: str, user_id: str | int, filtering: str):
         new_counter = int(super()._database.get_one(
-            super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                        filtering, type_coincidence],
+            super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                         filtering, type_coincidence],
                                       user_id=user_id)
         )) + 1
         query = super()._model_jsonb.update('users', column='counters', path=['fonbet', 'basketball', self.name,
@@ -300,18 +326,18 @@ class Scenarios(BaseStrategy):
 
         main_counter_guess = int(
             super()._database.get_one(
-                query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball',
-                                                                                  self.name, filtering,
-                                                                                  'guess'],
+                query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball',
+                                                                                   self.name, filtering,
+                                                                                   'guess'],
                                                 user_id=user_id)
             )
         )
 
         main_counter_not_guess = int(
             super()._database.get_one(
-                query=super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball',
-                                                                                  self.name, filtering,
-                                                                                  'not_guess'],
+                query=super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball',
+                                                                                   self.name, filtering,
+                                                                                   'not_guess'],
                                                 user_id=user_id)
             )
         )
@@ -358,22 +384,22 @@ class Scenarios(BaseStrategy):
             query=super()._model_jsonb.update('users', column='counters', path=['fonbet', 'basketball',
                                                                                 self.name, filtering,
                                                                                 'not_guess'],
-                                              values=0)
+                                              value=0)
         )
 
     def should_let_off_match(self, user_id: str | int):
         counter_guess = int(
             super()._database.get_one(
-                super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                            'temp_counters', 'guess'],
+                super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                             'temp_counters', 'guess'],
                                           user_id=user_id)
             )
         )
 
         counter_not_guess = int(
             super()._database.get_one(
-                super()._model_jsonb.read('users', column='counters', path=['fonbet', 'basketball', self.name,
-                                                                            'temp_counters', 'not_guess'],
+                super()._model_jsonb.read('users', columns='counters', path=['fonbet', 'basketball', self.name,
+                                                                             'temp_counters', 'not_guess'],
                                           user_id=user_id)
             )
         )
@@ -416,3 +442,25 @@ class Scenarios(BaseStrategy):
     @property
     def urls_limit(self):
         return len(self.__filters_dict["searching"]) * self.__max_matches_in_liga
+
+    @property
+    def max_part(self):
+        return 4
+
+    @property
+    def max_time(self):
+        return '20:59'
+
+    @staticmethod
+    def template_checking_message(user_id: str | int, match_id: str | int):
+        user = UserRepository().get(user_id=user_id)
+        match = MatchRepository().get(match_id=match_id)
+
+        message_teams = f"<b>{match.teams}</b>"
+        message_part = f"Играют {match.part} четверть"
+        score_message = f"Счет - {match.scores.get_part_score(match.part)}"
+        timer_message = f"Таймер - {match.timer}"
+        bet_message = f"Выбранный сценарий на матч - {match.bets.all_bets}"
+
+        text = f"{message_teams}\n{message_part}\n{score_message}\n{timer_message}\n{bet_message}"
+        return text
