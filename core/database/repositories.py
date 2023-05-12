@@ -1,5 +1,5 @@
-from core.types.dynamic import User, Bet, Match
 from core.types.static import BaseType
+from core.types.user import User, Match
 
 
 class BaseRepository(BaseType):
@@ -8,13 +8,16 @@ class BaseRepository(BaseType):
     """
 
     def get(self):
-        raise NotImplementedError('Не реализован метод get в классе наследнике')
+        raise NotImplementedError('Не реализован метод get в классе '
+                                  'наследнике')
 
     def save(self):
-        raise NotImplementedError('Не реализован метод save в классе наследнике')
+        raise NotImplementedError('Не реализован метод save в классе '
+                                  'наследнике')
 
     def delete(self):
-        raise NotImplementedError('Не реализован метод delete в классе наследнике')
+        raise NotImplementedError('Не реализован метод delete в классе '
+                                  'наследнике')
 
 
 class UserRepository(BaseRepository):
@@ -27,7 +30,7 @@ class UserRepository(BaseRepository):
         return User(user_id)
 
     def get_all(self):
-        query = self._model.read('users', columns='user_id')
+        query = self._qm.read('users', columns='user_id')
         return list(map(lambda x: str(x[0]), super()._database.get_all(query)))
 
     @staticmethod
@@ -61,6 +64,13 @@ class MatchRepository(BaseRepository):
     def set_status(match_id: str, new_status: str):
         Match(match_id=match_id).edit(column='status', value=new_status)
 
-    def get_matches(self) -> list[str]:
-        query = super()._model.read('matches', columns='id')
-        return list(map(lambda x: str(x[0]), super()._database.get_all(query=query)))
+    def get_matches(self, **kwargs) -> list[str]:
+        query = super()._qm.read('matches', columns='id')
+        if kwargs:
+            query = super()._qm.read('matches', columns='id',
+                                     **kwargs)
+        return list(map(lambda x: str(x[0]),
+                        super()._database.get_all(query=query)))
+
+    def get_user_matches(self, user_id: str | int):
+        return self.get_matches(id=F"LIKE '%{user_id}%'")

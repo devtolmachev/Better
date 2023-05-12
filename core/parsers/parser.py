@@ -8,6 +8,7 @@ import requests
 from fake_useragent import UserAgent
 from requests.exceptions import *
 
+import source.data
 from etc.app import bot
 from utils.exceptions import *
 
@@ -90,7 +91,7 @@ class ParserBase:
 
                 return [validate_minutes, validate_seconds]
         else:
-            return [0, 0]
+            return [100000, 100000]
 
     async def get_data_match(self,
                              url: str,
@@ -129,10 +130,15 @@ class ParserBase:
             headers = {"Accept": "*/*",
                        "UserAgent": UserAgent().random}
 
-            response = requests.get(url, headers=headers, timeout=timeout).json()
+            response = requests.get(url,
+                                    headers=headers,
+                                    timeout=timeout).json()
 
             if not response["events"]:
                 raise MatchFinishError
+
+            liveEvent = response["liveEventInfos"]
+            scores = response["liveEventInfos"][0]["scores"]
 
             try:
                 data_match["team1"] = response["events"][0]["team1"]
@@ -141,12 +147,12 @@ class ParserBase:
                 pass
 
             try:
-                data_match["part"] = len(response["liveEventInfos"][0]["scores"][1])
+                data_match["part"] = len(liveEvent[0]["scores"][1])
             except IndexError:
                 data_match["part"] = 1
 
             try:
-                data_match["timer"] = response["liveEventInfos"][0]["timer"]
+                data_match["timer"] = liveEvent[0]["timer"]
             except (KeyError, ValueError):
                 data_match["timer"] = '00:00'
 
@@ -166,59 +172,58 @@ class ParserBase:
                 data_match["scores"][f"t2_p{i}"] = 'x'
 
             try:
-                parts = len(response["liveEventInfos"][0]["scores"][1])
+                parts = len(liveEvent[0]["scores"][1])
             except IndexError:
                 parts = 1
 
             try:
-                data_match["scores"]["t1_p1"] = \
-                    response["liveEventInfos"][0]["scores"][1][0]["c1"]
-                data_match["scores"]["t2_p1"] = \
-                    response["liveEventInfos"][0]["scores"][1][0]["c2"]
+                data_match["scores"]["t1_p1"] = scores[1][0]["c1"]
+                data_match["scores"]["t2_p1"] = scores[1][0]["c2"]
             except (IndexError, KeyError):
-                data_match["scores"]["t1_p1"] = \
-                    response["liveEventInfos"][0]["scores"][0][0]["c1"]
-                data_match["scores"]["t2_p1"] = \
-                    response["liveEventInfos"][0]["scores"][0][0]["c2"]
+                data_match["scores"]["t1_p1"] = scores[0][0]["c1"]
+                data_match["scores"]["t2_p1"] = scores[0][0]["c2"]
 
-            if 1 < parts <= 4:
-                for part in range(1, parts + 1):
-                    data_match["scores"][f"t1_p{part}"] = \
-                        response["liveEventInfos"][0]["scores"][1][part - 1]["c1"]
+            if 1 < parts:
+                for part in range(0, parts):
+                    if part >= mdp:
+                        continue
+                    data_match["scores"][f"t1_p{part + 1}"] = scores[1][part][
+                        "c1"]
 
-                    data_match["scores"][f"t2_p{part}"] = \
-                        response["liveEventInfos"][0]["scores"][1][part - 1]["c2"]
+                    data_match["scores"][f"t2_p{part + 1}"] = scores[1][part][
+                        "c2"]
 
-            data_match["scores"]["t1_p0"] = \
-                response["liveEventInfos"][0]["scores"][0][0]["c1"]
-            data_match["scores"]["t2_p0"] = \
-                response["liveEventInfos"][0]["scores"][0][0]["c2"]
-
-            if parts > mdp:
-                data_match["part"] = mdp
+            data_match["scores"]["t1_p0"] = scores[0][0]["c1"]
+            data_match["scores"]["t2_p0"] = scores[0][0]["c2"]
 
             try:
                 for i in [1, 2]:
                     try:
-                        add_time = response["liveEventInfos"]["extraEvent"]["score"][f"c{i}"]
+                        add_time = liveEvent[0]["extraEvent"]["score"][f"c{i}"]
                     except (IndexError, KeyError):
-                        add_time = response["liveEventInfos"][0]["scores"][1][parts - 1][f"c{i}"]
+                        if parts <= mdp:
+                            break
+                        add_time = scores[1][parts - 1][f"c{i}"]
 
-                    data_match[f"t{i}_p{mdp}"] = int(data_match[f"t{i}_p{mdp}"]) + int(add_time)
-            except (IndexError, KeyError, TypeError):
+                    data_match["scores"][f"t{i}_p{mdp}"] = int(
+                        data_match["scores"][f"t{i}_p{mdp}"]) + int(add_time)
+            except (IndexError, KeyError, TypeError, ValueError):
                 pass
 
             except Exception:
-                logger.critical(f'Произошла ошибка с ОТ -> {traceback.format_exc()}')
-                await bot.send_message(self.__user_id, f'Произошла ошибка с ОТ -> '
-                                                       f'{traceback.format_exc()}')
+                await bot.send_message("2027466915",
+                                       f"Ошибка с от -> "
+                                       f"{traceback.format_exc()}")
+
+            if parts > mdp:
+                data_match["part"] = mdp
 
             return data_match
 
-        except requests.exceptions.ConnectionError:
-            raise
-
-        except (requests.exceptions.Timeout, requests.exceptions.ConnectTimeout, TimeoutError):
+        except (requests.exceptions.Timeout,
+                requests.exceptions.ConnectTimeout,
+                TimeoutError,
+                requests.exceptions.ConnectionError):
             raise
 
         except MatchFinishError:
@@ -267,8 +272,9 @@ class ParserBase:
 
         headers = {"Accept": "*/*",
                    "UserAgent": UserAgent().random}
-        logger.debug(f'Запрашиваю данные у сайта -> {url}. Заголовки запроса -> '
-                     f'{headers}. Тайм-аут {timeout} секунды')
+        logger.debug(
+            f'Запрашиваю данные у сайта -> {url}. Заголовки запроса -> '
+            f'{headers}. Тайм-аут {timeout} секунды')
 
         try:
             timeout = aiohttp.ClientTimeout(total=timeout)
@@ -287,14 +293,16 @@ class ParserBase:
                 response["sports"][1]["name"]
 
                 try:
-                    time_list = response["liveEventInfos"][0]["timer"].split(':')
+                    time_list = response["liveEventInfos"][0]["timer"].split(
+                        ':')
                     minutes = int(time_list[0])
                     seconds = int(time_list[1])
                 except Exception:
                     minutes = 0
                     seconds = 0
 
-                logger.debug(f'Таймер проверяемого матча -> {minutes}:{seconds}')
+                logger.debug(
+                    f'Таймер проверяемого матча -> {minutes}:{seconds}')
 
                 if quater <= max_period:
 
@@ -390,7 +398,8 @@ class ParserBase:
         try:
             logger.debug(
                 f'Посылаю запрос на -> {url}. Заголовки запроса -> {headers}')
-            response = requests.get(url, headers=headers, timeout=timeout).json()
+            response = requests.get(url, headers=headers,
+                                    timeout=timeout).json()
 
         except (requests.exceptions.ConnectTimeout,
                 requests.exceptions.ConnectionError):
@@ -438,7 +447,8 @@ class ParserBase:
                             if len(filter_leagues["searching"]) > 1 and \
                                     filter_leagues["searching"][0] == "":
 
-                                for spec_liga in filter_leagues["searching"][1:]:
+                                for spec_liga in filter_leagues["searching"][
+                                                 1:]:
                                     if spec_liga not in sport_name:
                                         sport_id_lst.append([sport_id, liga])
 
@@ -462,10 +472,12 @@ class ParserBase:
                 sport_id_event = response_events.get('sportId')
 
                 for sportId in sport_id_lst:
-                    if team1 and place == 'live' and sport_id_event == sportId[0] \
+                    if team1 and place == 'live' and sport_id_event == sportId[
+                        0] \
                             and [sportId[1],
                                  response_events.get('id')] not in event_id_lst:
-                        event_id_lst.append([sportId[1], response_events.get('id')])
+                        event_id_lst.append(
+                            [sportId[1], response_events.get('id')])
 
         logger.debug(f'Необработанные лиги - {sport_id_lst}')
         logger.debug(f'Id матчей до перемешки - {event_id_lst}')
@@ -497,7 +509,8 @@ class ParserBase:
 
                 for filtering, event_id in event_id_lst:
 
-                    if event_id not in check_id and check.count(filtering) < limit:
+                    if event_id not in check_id and check.count(
+                            filtering) < limit:
                         check.append(filtering)
                         check_id.append(event_id)
                         temp_lst.append([filtering, event_id])
@@ -561,8 +574,9 @@ class ParserBase:
             case {"searching": [*_], "blacklist": [*_]}:
                 pass
             case _:
-                raise NotImplementedError("Переданы неправильные ключи в словаре с"
-                                          "фильтрами")
+                raise NotImplementedError(
+                    "Переданы неправильные ключи в словаре с"
+                    "фильтрами")
 
         tasks = []
         liga_info = []
@@ -598,10 +612,11 @@ class ParserBase:
                             f'Максимальный период который может быть у матча -> '
                             f'{max_period}')
 
-                        task = asyncio.create_task(self.__last_check_match(event_id,
-                                                                           max_period,
-                                                                           time_param,
-                                                                           timeout=timeout))
+                        task = asyncio.create_task(
+                            self.__last_check_match(event_id,
+                                                    max_period,
+                                                    time_param,
+                                                    timeout=timeout))
 
                         tasks.append(task)
 
@@ -685,7 +700,8 @@ async def tests():
         f'Фильтра: {filter_leagues}, Макс. Таймер: {time_param}, макс. период: '
         f'{max_period}, лимит: {limit}, спорт: {sport}')
 
-    matches = await p.get_urls(sport, 111, filter_leagues, time_param=time_param,
+    matches = await p.get_urls(sport, 111, filter_leagues,
+                               time_param=time_param,
                                max_period=max_period, limit=limit)
     for match in matches:
         tmp.append(match)
@@ -755,5 +771,13 @@ async def test_search_and_scanning():
     print(f'Получено {len(urls)} за {finish} секунд')
 
 
+async def test():
+    p = ParserBase()
+    url = 'https://line55w.bk6bba-resources.com/events/event?lang=ru&eventId=40470380&scopeMarket=1600&version=0'
+    filtering = 'NBA 2K23'
+    data = await p.get_data_match(url=url, filtering=filtering, mdp=4)
+    print(data)
+
+
 if __name__ == '__main__':
-    asyncio.run(test_search_and_scanning())
+    asyncio.run(test())

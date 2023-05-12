@@ -1,4 +1,4 @@
-data = {'packetVersion': 14593736837, 'fromVersion': 0, 'catalogTablesVersion': 346945793,
+data1 = {'packetVersion': 14593736837, 'fromVersion': 0, 'catalogTablesVersion': 346945793,
         'catalogSpecialTablesVersion': 308780241, 'catalogEventViewVersion': 349515648,
         'sportBasicMarketsVersion': 347484819, 'sportBasicFactorsVersion': 347633315,
         'independentFactorsVersion': 345291768, 'factorsVersion': 14545271968,
@@ -49,5 +49,3 @@ data = {'packetVersion': 14705388318, 'fromVersion': 0, 'catalogTablesVersion': 
          'subscores': [],
          'extraEvent': {'kindId': 0, 'kindName': 'от', 'kindShortName': 'от', 'score': {'c1': '0', 'c2': '6'}}}],
         'customFactors': []}
-
-print(data)

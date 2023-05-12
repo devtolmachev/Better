@@ -8,7 +8,7 @@ from app.telegram_bot.decorators import security
 from app.telegram_bot.markups import reply
 from core.database.repositories import UserRepository
 from core.schemas import basketball
-from core.types.dynamic import Match
+from core.types.user import Match
 from etc import bot
 from source.types.strategies import Randomaizer, Scenarios
 
@@ -42,7 +42,7 @@ async def load_matches_from_db(msg: Message):
                 await bot.send_message(msg.from_user.id, f'Я в поиске')
             for match_id in user.matches():
                 match = Match(match_id=match_id)
-                await bot.send_message(msg.from_user.id, strategy.template_checking_message(user.id, match_id))
+                await bot.send_message(msg.from_user.id, strategy.template_msg_from_db(user.id, match_id))
 
 
 

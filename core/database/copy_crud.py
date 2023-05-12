@@ -1,11 +1,11 @@
-from typing import Any
+from typing import Any, Collection
 
 from utils.exceptions import WrongQueryError
 
 
-class CRUDService:
+class QMService:
     """
-    Base CreateReadUpdateDelete Class
+    Query Maker Service
     """
 
     def __enter__(self):
@@ -15,7 +15,7 @@ class CRUDService:
         pass
 
     @staticmethod
-    def truncate(**kwargs):
+    def truncate(**kwargs) -> str:
         """
         Формирует запрос TRUNCATE
         :param kwargs: Должен быть один именованный параметр, название
@@ -34,161 +34,316 @@ class CRUDService:
         return query
 
     @staticmethod
-    def create(table: str, *, columns: list = '', values: list):
+    def create(table: str, *,
+               values: Collection,
+               columns: Collection = '') -> str:
         """
         Формирует запрос INSERT
         :param table: Название таблицы
         :type table: str
         :param columns: Название столбцов таблицы, можно не указывать -
             тогда будет вставка по всей таблице
-        :type columns: list
-        :param values: Значения которые нужно вставить в таблицу,
-            по стандарту значения должы
-        :type values:
+        :type columns: list | tuple
+        :param values: Значения которые нужно вставить в таблицу.
+            По стандарту значения должны быть в объекте, по которому можно
+            итерироваться
+        :type values: list | tuple
         :return:
         :rtype:
         """
-        if type(values) == list and type(columns) == list and \
+        if hasattr(columns, '__iter__') and hasattr(values, '__iter__') and \
                 len(columns) != len(values):
             raise WrongQueryError
 
-        if type(columns) == list:
-            columns_ = f"({', '.join(columns)})"
+        if type(columns) == '':
+            columns_ = columns
         else:
-            columns_ = ''
+            columns_ = f"({', '.join(columns)})"
 
-        if type(values) == list:
+        if type(values) == str:
+            values_ = values
+        else:
             values_ = f"""VALUES ('{"', '".join(
                 list(map(lambda x: str(x), values)))}')"""
-        else:
-            values_ = values
 
-        query = """INSERT INTO %s%s VALUES('%s');""" % (table,
-                                                        columns_,
-                                                        values_)
+        query = "INSERT INTO %s%s VALUES('%s');" % (table, columns_, values_)
+        return query
+
+    def read(self, table: str, *,
+             column: Collection | str,
+             **kwargs) -> str:
+        """
+        Формирует запрос SELECT
+        :param table: Название таблицы
+        :type table: Any
+        :param column: Название столбца
+        :type column: str
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL Запрос SELECT
+        :rtype: str
+        """
+
+        where = []
+        if type(column) == str:
+            column = [column]
+        if kwargs:
+            for k, v in kwargs.items():
+
+                if not where:
+                    where.append(f"WHERE {k} {v}")
+                else:
+                    where.append(f"AND {k} {v}")
+
+        query = """SELECT %s FROM %s %s;""" % (', '.join(column),
+                                               table,
+                                               ' '.join(where))
         return query
 
     @staticmethod
-    def read(table: str, *, columns: list | str, **kwargs):
+    def unite(table: str, *,
+              column: str,
+              value: list | Any,
+              **kwargs: str) -> str:
+        """
+        Формирует вопрос для соединения/объединения/добавления элементов
+        :param table: Название таблицы
+        :type table: Any
+        :param column: Название столбца
+        :type column: str
+        :param value: Значение
+        :type value:  list | Any
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL Запрос для соединения/объединения/добавления элементов
+        :rtype: str
+        """
+
+        if isinstance(value, list):
+            value = f'''"{'", "'.join(value)}"'''
+            value = '{{%s}}' % value
+
         where = []
-        if type(columns) == str:
+        if kwargs:
+            for k, v in kwargs.items():
+                if not where:
+                    where.append(f"WHERE {k} {v}")
+                else:
+                    where.append(f"AND {k} {v}")
+
+        where = ' '.join(where)
+
+        query = """UPDATE %s SET %s = %s || %s %s;""" % (table,
+                                                         column,
+                                                         column,
+                                                         value,
+                                                         where)
+
+        return query
+
+    @staticmethod
+    def update(table: str, *,
+               columns: Collection[str] | str,
+               values: Collection[Any],
+               array: bool = False,
+               **kwargs: str) -> str:
+        """
+        Формирует SQL запрос UPDATE
+        :param table: Название таблицы
+        :type table: Any
+        :param columns: Название столбца (ов)
+        :type columns: str
+        :param values: Значение (я)
+        :type values:  list | Any
+        :param array: Нужно ли использовать тип данных МАССИВ
+        :type array: bool
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL запрос UPDATE
+        :rtype: str
+        """
+        update = []
+        where = []
+
+        if isinstance(columns, str):
             columns = [columns]
-        if kwargs:
-            for key, value in kwargs.items():
-                if not where:
-                    where.append(f"WHERE {key} = ('{value}')")
-                else:
-                    where.append(f"AND {key} = ('{value}')")
-        return ("""SELECT %s FROM %s %s;""" % (', '.join(columns),
-                                               table,
-                                               ' '.join(where)))
+        if isinstance(values, str):
+            values = [values]
 
-    @staticmethod
-    def unite(table: str, *, column: str, values: list, **kwargs: str):
-        where = []
         if kwargs:
-            for key, value in kwargs.items():
+            for k, v in kwargs.items():
                 if not where:
-                    where.append(f"WHERE {key} = ('{value}')")
+                    where.append(f"WHERE {k} {v}")
                 else:
-                    where.append(f"AND {key} = ('{value}')")
-        return ("""UPDATE %s SET %s = %s || '{{"%s"}}' %s;""" % (table,
-                                                                 column,
-                                                                 column,
-                                                                 '", "'.join(values),
-                                                                 ' '.join(where)))
-
-    @staticmethod
-    def update(table: str, *, columns: list[str], values: list[Any], array: bool = False, **kwargs: str):
-        center = []
-        where = []
-        if kwargs:
-            for key, value in kwargs.items():
-                if not where:
-                    where.append(f"WHERE {key} = ('{value}')")
-                else:
-                    where.append(f"AND {key} = ('{value}')")
+                    where.append(f"AND {k} {v}")
 
         for column, value in zip(columns, values):
-            update_query = "%s = ('%s'), " % (column, value)
+            update_query = "%s = '%s', " % (column, value)
             if array:
-                update_query = "%s = (ARRAY%s::text[]), " % (column, value)
-            center.append(update_query)
+                update_query = "%s = ARRAY[%s]::text[], " % (column, value)
+            update.append(update_query)
 
-        text = 'UPDATE %s SET ' % table + '\n'.join(center)[:-2] + ' ' + ' '.join(where) + ';'
-        return text
+        query = "UPDATE %s SET %s %s;" % (table,
+                                          '\n'.join(update)[:-2],
+                                          ' '.join(where))
+
+        return query
 
     @staticmethod
     def delete(table: str, **kwargs: str):
+        """
+        Формирует SQL запрос DELETE FROM
+        :param table: Название таблицы
+        :type table: str
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL запрос DELETE FROM
+        :rtype: str
+        """
         where = []
         if kwargs:
-            for key, value in kwargs.items():
+            for k, v in kwargs.items():
                 if not where:
-                    where.append(f"WHERE {key} = ('{value}')")
+                    where.append(f"WHERE {k} {v}")
                 else:
-                    where.append(f"AND {key} = ('{value}')")
+                    where.append(f"AND {k} {v}")
         return """DELETE FROM %s %s;""" % (table, ' '.join(where))
 
 
-class JsonbCRUDService(CRUDService):
+class JsonbQMService(QMService):
+    """
+    Jsonb Query Maker Service
+    """
     @staticmethod
-    def update(table: str, *, column: str, value: Any, path: list, add_key: bool = True,
-               array: bool = False, **kwargs: str):
+    def update(table: str, *,
+               column: str,
+               value: Any,
+               path: list,
+               add_key: bool = True,
+               array: bool = False,
+               **kwargs: str) -> str:
+        """
+        Формирует Jsonb SQL запрос UPDATE
+        :param table: Название таблицы
+        :type table: str
+        :param column: Название столбца
+        :type column: str
+        :param value: Значение
+        :type value:  list | Any
+        :param path: Путь к значению
+        :type path: list
+        :param add_key: Если нет такого пути, создать и добавить значение?
+        :type add_key: bool
+        :param array: Нужно ли использовать тип данных МАССИВ
+        :type array: bool
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL Запрос UPDATE для типа данных jsonb
+        :rtype:str
+        """
         where = []
         if kwargs:
             for k, v in kwargs.items():
                 if not where:
-                    where.append(f"WHERE {k} = ('{v}')")
+                    where.append(f"WHERE {k} {v}")
                 else:
-                    where.append(f"AND {k} = ('{v}')")
+                    where.append(f"AND {k} {v}")
         value = f'"{value}"'
         if array:
             value = f'[{value}]'
-        return ("""UPDATE %s SET %s = jsonb_set(%s, '{"%s"}', '%s', %s) %s;""" % (table,
-                                                                                  column,
-                                                                                  column,
-                                                                                  '", "'.join(path),
-                                                                                  value,
-                                                                                  add_key,
-                                                                                  ' '.join(where)))
+
+        query = """UPDATE %s SET %s = jsonb_set(%s, '{"%s"}', '%s', %s) %s;""" % (
+            table,
+            column,
+            column,
+            '", "'.join(path),
+            value,
+            add_key,
+            ' '.join(where)
+        )
+
+        return query
 
     @staticmethod
-    def unite(table: str, *, column: str, value: Any, path: list,
-              array: bool = False, add_key: bool = True, **kwargs: str):
+    def unite(table: str, *,
+              column: str,
+              value: Any,
+              path: list,
+              array: bool = False,
+              add_key: bool = True,
+              **kwargs: str) -> str:
+        """
+        Формирует запрос для соединения/объединения/добавления элементов
+        для типа данных jsonb
+        :param table: Название таблицы
+        :type table: str
+        :param column: Название столбца
+        :type column: str
+        :param value: Значение
+        :type value:  list | Any
+        :param path: Путь к значению
+        :type path: list
+        :param add_key: Если нет такого пути, создать и добавить значение?
+        :type add_key: bool
+        :param array: Нужно ли использовать тип данных МАССИВ
+        :type array: bool
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL Запрос соединения/объединения/добавления элементов
+            для типа данных jsonb
+        :rtype:str
+        """
         where = []
         if kwargs:
             for k, v in kwargs.items():
                 if not where:
-                    where.append(f"WHERE {k} = ('{v}')")
+                    where.append(f"WHERE {k} {v}")
                 else:
-                    where.append(f"AND {k} = ('{v}')")
+                    where.append(f"AND {k} {v}")
         value = f'"{value}"'
         if array:
             value = f'[{value}]'
-        return ("""UPDATE %s SET %s = jsonb_set(%s, '{%s}', %s->'%s' || '%s', %s) %s;""" % (table,
-                                                                                            column,
-                                                                                            column,
-                                                                                            ", ".join(path),
-                                                                                            column,
-                                                                                            "'->'".join(path),
-                                                                                            value,
-                                                                                            add_key,
-                                                                                            ''.join(where)))
+
+        query = """UPDATE %s SET %s = jsonb_set(%s, '{"%s"}', %s->'%s' || '%s', %s) %s;""" % (
+            table,
+            column,
+            column,
+            ", ".join(path),
+            column,
+            "'->'".join(path),
+            value,
+            add_key,
+            ''.join(where))
+
+        return query
 
     @staticmethod
-    def read(table: str, *, columns: str, path: list, **kwargs):
+    def read(table: str, *,
+             column: str,
+             path: list = None,
+             **kwargs) -> str:
+        """
+        Формирует SQL запрос SELECT
+        :param table: Название таблицы
+        :type table: str
+        :param column: Название столбца
+        :type column: str
+        :param path: Путь к значению. Если указано None, то выборка будет по
+            столбцу, исключая путь
+        :type path: list
+        :param kwargs: Условие WHERE. Пример - user_id="LIKE '2027%'"
+        :return: SQL Запрос SELECT для типа данных jsonb
+        :rtype:str
+        """
         where = []
+
         if kwargs:
-            for key, value in kwargs.items():
+            for k, v in kwargs.items():
                 if not where:
-                    where.append(f"WHERE {key} = ('{value}')")
+                    where.append(f"WHERE {k} {v}")
                 else:
-                    where.append(f"AND {key} = ('{value}')")
+                    where.append(f"AND {k} {v}")
 
         src_path = ''
         if path:
             src_path = f"""->'{"'->'".join(path)}'"""
-        return ("""SELECT %s%s FROM %s %s;""" % (columns,
+
+        query = """SELECT %s%s FROM %s %s;""" % (column,
                                                  src_path,
                                                  table,
-                                                 ' '.join(where)))
+                                                 ' '.join(where))
+        return query

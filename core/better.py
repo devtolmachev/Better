@@ -1,11 +1,12 @@
-from core.database.crud import CRUDService
+from core.database.crud import QMService
+from core.database.repositories import UserRepository, MatchRepository
 from core.database.main_database import Database
-from core.database.repositories import MatchRepository, UserRepository
-from core.types.dynamic import User, Bet
+from core.types.matches import Bet
+from core.types.user import User
 
 
 class Better(Database, UserRepository, MatchRepository, Bet):
-    _model = CRUDService()
+    _qm = QMService()
 
     def __init__(self):
         super().__init__()
@@ -19,5 +20,5 @@ class Better(Database, UserRepository, MatchRepository, Bet):
 
     @staticmethod
     def get_user(user_id) -> User:
-        user = UserRepository(user_id=user_id)
+        user = UserRepository()
         return user.get(user_id=user_id)
