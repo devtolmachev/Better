@@ -1,1 +1,1 @@
-from .database import main_database
+from .database.main import Database

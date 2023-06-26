@@ -8,7 +8,6 @@ import requests
 from fake_useragent import UserAgent
 from requests.exceptions import *
 
-import source.data
 from etc.app import bot
 from utils.exceptions import *
 
@@ -25,6 +24,9 @@ class ParserBase:
     __NBA_validate_min_3q = 10  # 3 quater
     __NBA_validate_sec_3q = 30
 
+    __NBA_validate_min_4q = 15  # 3 quater
+    __NBA_validate_sec_4q = 30
+
     # any liga name in basketball sport, but not "NBA 2K23"
     __NOT_NBA_validate_min_1q = 4  # 1 quater
     __NOT_NBA_validate_sec_1q = 59
@@ -34,6 +36,9 @@ class ParserBase:
 
     __NOT_NBA_validate_min_3q = 24  # 3 quater
     __NOT_NBA_validate_sec_3q = 59
+
+    __NOT_NBA_validate_min_4q = 34  # 4 quater
+    __NOT_NBA_validate_sec_4q = 59
 
     def __init__(self, user_id: str | int = None):
         super().__init__()
@@ -60,45 +65,49 @@ class ParserBase:
 
         """
 
-        if quater < max_period:
-            if liga_name.count(special_liga):
-                validate_minutes = 0
-                validate_seconds = 0
-                if quater == 1:
-                    validate_seconds = self.__NBA_validate_sec_1q
-                    validate_minutes = self.__NBA_validate_min_1q
-                elif quater == 2:
-                    validate_seconds = self.__NBA_validate_sec_2q
-                    validate_minutes = self.__NBA_validate_min_2q
-                elif quater == 3:
-                    validate_seconds = self.__NBA_validate_sec_3q
-                    validate_minutes = self.__NBA_validate_min_3q
+        if liga_name.count(special_liga):
+            validate_minutes = 0
+            validate_seconds = 0
+            if quater == 1:
+                validate_seconds = self.__NBA_validate_sec_1q
+                validate_minutes = self.__NBA_validate_min_1q
+            elif quater == 2:
+                validate_seconds = self.__NBA_validate_sec_2q
+                validate_minutes = self.__NBA_validate_min_2q
+            elif quater == 3:
+                validate_seconds = self.__NBA_validate_sec_3q
+                validate_minutes = self.__NBA_validate_min_3q
+            elif quater == 4:
+                validate_seconds = self.__NBA_validate_sec_4q
+                validate_minutes = self.__NBA_validate_min_4q
 
-                return [validate_minutes, validate_seconds]
+            return [validate_minutes, validate_seconds]
 
-            else:
-                validate_minutes = 0  # минуты
-                validate_seconds = 0  # секунды
-                if quater == 1:
-                    validate_seconds = self.__NOT_NBA_validate_sec_1q
-                    validate_minutes = self.__NOT_NBA_validate_min_1q
-                elif quater == 2:
-                    validate_seconds = self.__NOT_NBA_validate_sec_2q
-                    validate_minutes = self.__NOT_NBA_validate_min_2q
-                elif quater == 3:
-                    validate_seconds = self.__NOT_NBA_validate_sec_3q
-                    validate_minutes = self.__NOT_NBA_validate_min_3q
-
-                return [validate_minutes, validate_seconds]
         else:
-            return [100000, 100000]
+            validate_minutes = 0  # минуты
+            validate_seconds = 0  # секунды
+            if quater == 1:
+                validate_seconds = self.__NOT_NBA_validate_sec_1q
+                validate_minutes = self.__NOT_NBA_validate_min_1q
+            elif quater == 2:
+                validate_seconds = self.__NOT_NBA_validate_sec_2q
+                validate_minutes = self.__NOT_NBA_validate_min_2q
+            elif quater == 3:
+                validate_seconds = self.__NOT_NBA_validate_sec_3q
+                validate_minutes = self.__NOT_NBA_validate_min_3q
+            elif quater == 4:
+                validate_seconds = self.__NOT_NBA_validate_sec_4q
+                validate_minutes = self.__NOT_NBA_validate_min_4q
+
+            return [validate_minutes, validate_seconds]
 
     async def get_data_match(self,
                              url: str,
                              filtering: str,
                              mdp: int,
                              retry: int = 5,
-                             timeout=2):
+                             timeout=2,
+                             proxy=None):
         """
         Используйте этот метод, чтобы получить информацию о матче
 
@@ -127,15 +136,18 @@ class ParserBase:
             data_match[key] = {}
 
         try:
-            headers = {"Accept": "*/*",
-                       "UserAgent": UserAgent().random}
+            headers = {
+                "Accept": "*/*",
+                "UserAgent": UserAgent().random
+            }
 
             response = requests.get(url,
                                     headers=headers,
-                                    timeout=timeout).json()
+                                    timeout=timeout,
+                                    proxies=proxy).json()
 
             if not response["events"]:
-                raise MatchFinishError
+                return
 
             liveEvent = response["liveEventInfos"]
             scores = response["liveEventInfos"][0]["scores"]
@@ -226,15 +238,8 @@ class ParserBase:
                 requests.exceptions.ConnectionError):
             raise
 
-        except MatchFinishError:
-            pass
-
         except Exception:
             if retry:
-                logger.warning(
-                    f'Произошла ошибка с url: '
-                    f'{url}\nОсталось попыток подключится - {retry}\n'
-                    f'{traceback.format_exc()}')
                 await asyncio.sleep(10)
                 return self.get_data_match(url=url,
                                            filtering=filtering,
@@ -248,17 +253,21 @@ class ParserBase:
 
     async def __last_check_match(self,
                                  event_id: int | str,
-                                 max_period: int = 5,
+                                 filtering: str,
+                                 max_period: int = 4,
                                  time_param: bool | str = False,
                                  retry: int = 5,
                                  timeout=2):
         """
-        Метод Last_check предназначен для последней проверки на валидность ссылки.
-        Исходя из стратегии он должен проверить номер текущего периода, чтобы потом
-        узнать, есть ли смысл брать именно эту игру на отслеживание
+        Метод Last_check предназначен для последней проверки на валидность
+        ссылки. Исходя из стратегии он должен проверить номер текущего
+        периода, чтобы потом узнать, есть ли смысл брать именно эту игру на
+        отслеживание
 
-         :param event_id: Идентификатор матча - обязательный параметр, требуется для
-            формирования ссылки.
+         :param event_id: Идентификатор матча - обязательный параметр,
+            требуется для формирования ссылки.
+
+        :param filtering: С каким фильтром был найден матч?
 
         :param max_period: Укажите максимальный период, для фильтрации матчей
 
@@ -267,14 +276,11 @@ class ParserBase:
 
         """
 
-        url = f'https://line55w.bk6bba-resources.com/events/event?lang=ru&eventId=' \
-              f'{event_id[1]}&scopeMarket=1600&version=0'
+        url = (f'https://line55w.bk6bba-resources.com/events/event?lang=ru'
+               f'&eventId={event_id}&scopeMarket=1600&version=0')
 
         headers = {"Accept": "*/*",
                    "UserAgent": UserAgent().random}
-        logger.debug(
-            f'Запрашиваю данные у сайта -> {url}. Заголовки запроса -> '
-            f'{headers}. Тайм-аут {timeout} секунды')
 
         try:
             timeout = aiohttp.ClientTimeout(total=timeout)
@@ -293,16 +299,13 @@ class ParserBase:
                 response["sports"][1]["name"]
 
                 try:
-                    time_list = response["liveEventInfos"][0]["timer"].split(
-                        ':')
+                    time_list = response[
+                        "liveEventInfos"][0]["timer"].split(':')
                     minutes = int(time_list[0])
                     seconds = int(time_list[1])
                 except Exception:
                     minutes = 0
                     seconds = 0
-
-                logger.debug(
-                    f'Таймер проверяемого матча -> {minutes}:{seconds}')
 
                 if quater <= max_period:
 
@@ -310,22 +313,13 @@ class ParserBase:
                         param_minutes = int(time_param.split(':')[0])
                         param_seconds = int(time_param.split(':')[1])
                         if minutes <= param_minutes and seconds < param_seconds:
-                            logger.debug('Матч прошел проверку по времени')
-                            return [url, event_id[0]]
-                        else:
-                            logger.debug('Матч не прошел проверку по времени')
+                            return [url, filtering]
 
                     else:
-                        logger.debug('Возвращаю url')
-                        return [url, event_id[0]]
-
-                else:
-                    logger.debug(f'Игра не подошла по параметрам периода')
+                        return [url, filtering]
 
             except (IndexError, ValueError, KeyError):
-                logger.debug(
-                    f'Не удалось структурировать информацию о матче. Скорее всего '
-                    f'матч закончился')
+                pass
 
         except TimeoutError:
             pass
@@ -335,12 +329,9 @@ class ParserBase:
 
         except Exception:
             if retry:
-                logger.error(
-                    f'Произошла ошибка с url: {url}\nОсталось попыток подключится - '
-                    f'{retry}\n\n'
-                    f'{traceback.format_exc()}')
                 await asyncio.sleep(5)
                 return await self.__last_check_match(event_id=event_id,
+                                                     filtering=filtering,
                                                      max_period=max_period,
                                                      retry=retry - 1)
             else:
@@ -359,32 +350,33 @@ class ParserBase:
                                      retry: int = 10,
                                      timeout=2) -> list:
         """
-        Этот метод предназначен для сборки всех идентификаторов матчей по фильтрам.
-        Используйте его в том случае если вам нужно получить event id матчей по
-        фильтрам
+        Этот метод предназначен для сборки всех идентификаторов матчей по
+        фильтрам. Используйте его в том случае если вам нужно получить event
+        id матчей по фильтрам
 
         :param sport: Укажите вид спорта.
 
-        :param only_leagues: Укажите True, только если вам нужно собрать названия
-            все лиг в конкретном спорте
+        :param only_leagues: Укажите True, только если вам нужно собрать
+            названия все лиг в конкретном спорте
 
-        :param filter_leagues: Укажите словарь с ключами blacklist - чтобы убрать
-            ненужные лиги из поиска, и searching - какую лигу вы хотите найти. Если
-            поиск игр в конкретной лиге является не обязательным параметром, то
-            укажите пустую строку
+        :param filter_leagues: Укажите словарь с ключами blacklist - чтобы
+            убрать ненужные лиги из поиска, и searching - какую лигу вы хотите
+            найти. Если поиск игр в конкретной лиге является не обязательным
+            параметром, то укажите пустую строку
 
-        :param limit: Укажите лимит возвращаемых event_id, по умолчанию лимит равен
-            двум
+        :param limit: Укажите лимит возвращаемых event_id, по умолчанию лимит
+            равен двум
 
-        :param only_sports: Укажите True если вам нужно получить только название, и
-            id видов спорта
+        :param only_sports: Укажите True если вам нужно получить только
+            название, и id видов спорта
 
         :param user_id: Telegram User Id
 
         :param timeout: Устанавливается таймаут, чтобы долго не ждать ответа от
             сервера, а пропускать сборку данных этого url
 
-        :return: Возвращает список с собранными event_id (идентификаторами матча)
+        :return: Возвращает список с собранными event_id
+            (идентификаторами матча)
         """
 
         url = 'https://line55w.bk6bba-resources.com/events/list?' \
@@ -396,43 +388,43 @@ class ParserBase:
                    "UserAgent": UserAgent().random}
 
         try:
-            logger.debug(
-                f'Посылаю запрос на -> {url}. Заголовки запроса -> {headers}')
             response = requests.get(url, headers=headers,
                                     timeout=timeout).json()
 
         except (requests.exceptions.ConnectTimeout,
-                requests.exceptions.ConnectionError):
+                requests.exceptions.ConnectionError,
+                requests.exceptions.ReadTimeout):
             raise requests.exceptions.ConnectTimeout
 
         except TimeoutError:
             if retry:
-                return await self.__collecting_events_id(sport=sport,
-                                                         user_id=user_id,
-                                                         filter_leagues=filter_leagues,
-                                                         limit=limit,
-                                                         only_sports=only_sports,
-                                                         retry=retry - 1)
+                return await self.__collecting_events_id(
+                    sport=sport,
+                    user_id=user_id,
+                    filter_leagues=filter_leagues,
+                    limit=limit,
+                    only_sports=only_sports,
+                    retry=retry - 1
+                )
             else:
                 raise
 
         except Exception:
-            logger.critical(f'{traceback.format_exc()}')
             if retry:
                 await asyncio.sleep(10)
-                return await self.__collecting_events_id(sport=sport,
-                                                         filter_leagues=filter_leagues,
-                                                         limit=limit,
-                                                         user_id=user_id,
-                                                         only_leagues=only_leagues,
-                                                         only_sports=only_sports,
-                                                         retry=retry - 1)
+                return await self.__collecting_events_id(
+                    sport=sport,
+                    filter_leagues=filter_leagues,
+                    limit=limit,
+                    user_id=user_id,
+                    only_leagues=only_leagues,
+                    only_sports=only_sports,
+                    retry=retry - 1
+                )
             else:
                 raise
 
         else:
-
-            logger.debug(f'Беру эти фильтры -> {filter_leagues}')
 
             for response_sport in response["sports"]:
                 sport_name = response_sport.get("name")
@@ -444,15 +436,18 @@ class ParserBase:
                             and [sport_id, liga] not in sport_id_lst:
 
                         if liga == "":
-                            if len(filter_leagues["searching"]) > 1 and \
-                                    filter_leagues["searching"][0] == "":
+                            if len(filter_leagues["searching"]) > 1:
+                                if filter_leagues["searching"][0] != '':
+                                    await bot.send_message(user_id,
+                                                           'Неправильные '
+                                                           'фильтра')
 
-                                for spec_liga in filter_leagues["searching"][
-                                                 1:]:
-                                    if spec_liga not in sport_name:
+                                for spec_liga in filter_leagues[
+                                                     "searching"][1:]:
+                                    if not sport_name.count(spec_liga):
                                         sport_id_lst.append([sport_id, liga])
 
-                            else:
+                            elif not sport_name.count('NBA 2K23'):
                                 sport_id_lst.append([sport_id, liga])
 
                         else:
@@ -473,24 +468,18 @@ class ParserBase:
 
                 for sportId in sport_id_lst:
                     if team1 and place == 'live' and sport_id_event == sportId[
-                        0] \
-                            and [sportId[1],
-                                 response_events.get('id')] not in event_id_lst:
+                        0] and [sportId[1],
+                                response_events.get('id')] not in event_id_lst:
                         event_id_lst.append(
                             [sportId[1], response_events.get('id')])
-
-        logger.debug(f'Необработанные лиги - {sport_id_lst}')
-        logger.debug(f'Id матчей до перемешки - {event_id_lst}')
 
         if filter_leagues.get("black_id"):
             for black_id in filter_leagues["black_id"]:
                 for event_id in event_id_lst:
-                    if int(black_id) in event_id:
+                    if int(black_id) == int(event_id[1]):
                         event_id_lst.remove(event_id)
 
         random.shuffle(event_id_lst)
-        logger.debug(f'Id матчей после перемешки - {event_id_lst}')
-        logger.debug(f'Лимит игр в лиге -> {limit}')
         check = []
         check_id = []
         temp_lst = []
@@ -515,11 +504,9 @@ class ParserBase:
                         check_id.append(event_id)
                         temp_lst.append([filtering, event_id])
 
-        if len(temp_lst) < len(filter_leagues["searching"]) * limit:
+        if not temp_lst:
             raise MatchesNotFoundError
 
-        logger.debug(
-            f'Возвращаю отфильтрованные идентификаторы матчей -> {temp_lst}')
         return temp_lst
 
     async def get_urls(self,
@@ -532,8 +519,7 @@ class ParserBase:
                        only_sports: bool = False,
                        retry: int = 5,
                        time_param: bool | str = False,
-                       timeout: int = 3,
-                       test: bool = False):
+                       timeout: int = 3):
         """
         Этот метод предназначен для получения ссылок на отслеживание подходящих
         матчей с максимальной скоростью.
@@ -546,25 +532,26 @@ class ParserBase:
 
         :param user_id: Telegram User Id
 
-        :param only_leagues: Укажите True, если вам нужно получить только название, и
-            id лиг в конкретном спорте.
+        :param only_leagues: Укажите True, если вам нужно получить только
+            название, и id лиг в конкретном спорте.
 
         :param retry: Количество попыток при ошибке
 
-        :param only_sports: Укажите True если вам нужно получить только название,
-            и id видов спорта
+        :param only_sports: Укажите True если вам нужно получить только
+            название, и id видов спорта
 
-        :param limit: Укажите лимит возвращаемых event_id, по умолчанию лимит равен
-            двум
+        :param limit: Укажите лимит возвращаемых event_id, по умолчанию лимит
+            равен двум
 
         :param max_period: Укажите максимальную четверть матчей, для фильтрации
 
         :param timeout: Устанавливается таймаут, чтобы долго не ждать ответа от
             сервера, а пропускать сборку данных этого url
 
-        :param time_param: Нужно ли подбирать игры по параметрам времени? Если нужно,
-            то укажите список, где по нулевому индексу максимальное количество минут,
-            а по первому индексу максимальное количество секунд
+        :param time_param: Нужно ли подбирать игры по параметрам времени?
+            Если нужно, то укажите список, где по нулевому индексу максимальное
+            количество минут, а по первому индексу максимальное
+            количество секунд
         """
 
         if filter_leagues is None:
@@ -584,44 +571,28 @@ class ParserBase:
         temp_for_name = []
 
         try:
-            for event_id in await self.__collecting_events_id(sport,
-                                                              user_id,
-                                                              filter_leagues,
-                                                              limit=limit,
-                                                              only_leagues=only_leagues,
-                                                              only_sports=only_sports,
-                                                              timeout=timeout):
-                try:
+            for filtering, event_id in await self.__collecting_events_id(
+                    sport=sport,
+                    user_id=user_id,
+                    filter_leagues=filter_leagues,
+                    limit=limit,
+                    only_leagues=only_leagues,
+                    only_sports=only_sports,
+                    timeout=timeout):
 
-                    if only_leagues or only_sports:
-                        liga_info.append(event_id[1])
+                if only_leagues or only_sports:
+                    liga_info.append([filtering, event_id])
 
-                    elif not only_leagues and not only_sports:
-                        if time_param:
-                            validate_time = f"{time_param.split(':')[0]} - " \
-                                            f"{time_param.split(':')[1]}"
-                            logger.debug(
-                                f'Параметры времени включены. Текущее время матча '
-                                f'должно быть не более {validate_time}')
+                elif not only_leagues and not only_sports:
+                    task = asyncio.create_task(
+                        self.__last_check_match(event_id=event_id,
+                                                filtering=filtering,
+                                                max_period=max_period,
+                                                time_param=time_param,
+                                                timeout=timeout)
+                    )
 
-                        elif not time_param:
-                            logger.debug(
-                                f'Параметры времени отключены -> {time_param}')
-
-                        logger.debug(
-                            f'Максимальный период который может быть у матча -> '
-                            f'{max_period}')
-
-                        task = asyncio.create_task(
-                            self.__last_check_match(event_id,
-                                                    max_period,
-                                                    time_param,
-                                                    timeout=timeout))
-
-                        tasks.append(task)
-
-                except Exception:
-                    continue
+                    tasks.append(task)
 
             if only_leagues or only_sports:
                 for leagues in liga_info:
@@ -646,9 +617,6 @@ class ParserBase:
 
         except Exception:
             if retry:
-                logger.critical(f'Ошибка в методе get_urls. Делаю еще '
-                                f'попытку. Осталось {retry} попыток\n\n'
-                                f'{traceback.format_exc()} ')
                 await asyncio.sleep(5)
                 return await self.get_urls(sport=sport,
                                            user_id=user_id,
@@ -664,7 +632,7 @@ class ParserBase:
 
 def read_file():
     lst = []
-    with open('/home/daniil/PycharmProjects/better/test-parser.txt') as file:
+    with open('/test-parser.txt') as file:
         rows = file.read().split('Тест')
         for row in rows:
             if row.split(' № ') != ['']:
@@ -773,11 +741,18 @@ async def test_search_and_scanning():
 
 async def test():
     p = ParserBase()
-    url = 'https://line55w.bk6bba-resources.com/events/event?lang=ru&eventId=40470380&scopeMarket=1600&version=0'
+    url = 'https://line55w.bk6bba-resources.com/events/event?lang=ru&eventId=40829959&scopeMarket=1600&version=0'
     filtering = 'NBA 2K23'
-    data = await p.get_data_match(url=url, filtering=filtering, mdp=4)
-    print(data)
+    proxies = []
+    with open('../../proxies.txt') as f:
+        for row in f.readlines():
+            row = row.split('\n')[0]
+            method = row.split('://')[0]
+            proxy = row
+            proxies.append({method: proxy})
 
-
-if __name__ == '__main__':
-    asyncio.run(test())
+    # for proxy in proxies:
+    proxy = {
+        'http': 'http://31.186.241.8:8888',
+    }
+    print(proxy)

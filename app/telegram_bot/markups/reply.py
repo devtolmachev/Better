@@ -1,17 +1,23 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from aiogram.utils.keyboard import ReplyKeyboardBuilder
 
 
-def get_online_scan_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn1 = KeyboardButton('Что ты делаешь❓')
-    btn2 = KeyboardButton('Завершить сканирование ❌')
-    kb.add(btn1, btn2)
-    return kb
+def get_start_kb() -> ReplyKeyboardMarkup:
+    kb = ReplyKeyboardBuilder()
+    btn1 = KeyboardButton(text='Мой профиль⬆️')
+    btn2 = KeyboardButton(text='Добавить помощника👨👨🏻‍💻')
+    btn3 = KeyboardButton(text='Меню запуска ботов')
+    kb.add(btn1, btn2, btn3)
+    kb.adjust(2)
+    return kb.as_markup(resize_keyboard=True)
 
 
-def get_start_kb():
-    kb = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    btn1 = KeyboardButton('Рандомайзер')
-    btn2 = KeyboardButton('Сценарии')
-    kb.add(btn1, btn2)
-    return kb
+class MyProfileNavigation:
+
+    @staticmethod
+    def get_options_profile() -> ReplyKeyboardMarkup:
+        kb = ReplyKeyboardBuilder()
+        btn1 = KeyboardButton(text='Настройки⚙️')
+        btn2 = KeyboardButton(text='Мои помощники🧑🏽‍🤝‍🧑🏿')
+        return kb.add(btn1, btn2).as_markup(resize_keyboard=True)
+
